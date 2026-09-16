@@ -6,6 +6,7 @@ import type { ChampionSummary } from "@/lib/dataDragon";
 import { getCounters } from "@/data/counters";
 import { getRole, type Role } from "@/data/roles";
 import TeamSlotPicker from "./TeamSlotPicker";
+import LaneDraftBoard, { type LaneAssignment } from "./LaneDraftBoard";
 
 interface CandidateReason {
   enemyId: string;
@@ -20,6 +21,10 @@ interface Candidate {
   weaknesses: string[]; // enemy champion ids that counter this candidate back
 }
 
+function abilitySlot(keyAbility: string): string {
+  return keyAbility.split(" — ")[0].trim();
+}
+
 export default function ChampionPicker({
   champions,
 }: {
@@ -27,8 +32,8 @@ export default function ChampionPicker({
 }) {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [allyIds, setAllyIds] = useState<string[]>([]);
-  const [enemyIds, setEnemyIds] = useState<string[]>([]);
+  const [allyLanes, setAllyLanes] = useState<LaneAssignment>({});
+  const [enemyLanes, setEnemyLanes] = useState<LaneAssignment>({});
   const [yourBans, setYourBans] = useState<string[]>([]);
   const [enemyBans, setEnemyBans] = useState<string[]>([]);
 
@@ -37,6 +42,15 @@ export default function ChampionPicker({
     champions.forEach((c) => map.set(c.id, c));
     return map;
   }, [champions]);
+
+  const allyIds = useMemo(
+    () => Object.values(allyLanes).filter((id): id is string => Boolean(id)),
+    [allyLanes]
+  );
+  const enemyIds = useMemo(
+    () => Object.values(enemyLanes).filter((id): id is string => Boolean(id)),
+    [enemyLanes]
+  );
 
   const takenIds = useMemo(
     () =>
@@ -55,14 +69,14 @@ export default function ChampionPicker({
 
   const selected = selectedId ? byId.get(selectedId) ?? null : null;
 
-  const allyRoles = useMemo(
-    () => new Set(allyIds.map((id) => getRole(id)).filter((r): r is Role => Boolean(r))),
-    [allyIds]
+  const filledAllyLanes = useMemo(
+    () => new Set(Object.keys(allyLanes).filter((lane) => allyLanes[lane as Role])),
+    [allyLanes]
   );
 
   const isRoleTaken = (championId: string) => {
     const role = getRole(championId);
-    return role ? allyRoles.has(role) : false;
+    return role ? filledAllyLanes.has(role) : false;
   };
 
   const candidates = useMemo<Candidate[]>(() => {
@@ -105,12 +119,13 @@ export default function ChampionPicker({
         return 0;
       })
       .slice(0, 8);
-  }, [selected, enemyIds, takenIds, byId, allyRoles]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, enemyIds, takenIds, byId, filledAllyLanes]);
 
   return (
     <div className="flex w-full max-w-2xl flex-col gap-8">
       <div className="flex flex-col gap-2">
-        <label htmlFor="champion-search" className="text-sm font-semibold text-zinc-900">
+        <label htmlFor="champion-search" className="text-sm font-semibold text-zinc-300">
           Opponent&apos;s champion
         </label>
         <input
@@ -162,10 +177,7 @@ export default function ChampionPicker({
               className="rounded-md"
               unoptimized
             />
-            <div>
-              <p className="font-semibold text-zinc-100">{selected.name}</p>
-              <p className="text-sm text-zinc-500">{selected.title}</p>
-            </div>
+            <p className="font-semibold text-zinc-100">{selected.name}</p>
             <button
               onClick={() => {
                 setSelectedId(null);
@@ -232,7 +244,7 @@ export default function ChampionPicker({
                             <div key={r.enemyId} className="text-sm text-zinc-400">
                               vs {byId.get(r.enemyId)?.name ?? r.enemyId}: {r.reason}{" "}
                               <span className="font-medium text-green-400">
-                                ({r.keyAbility})
+                                ({abilitySlot(r.keyAbility)})
                               </span>
                             </div>
                           ))}
@@ -256,25 +268,23 @@ export default function ChampionPicker({
         </div>
       )}
 
-      <div className="flex flex-col gap-5 rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+      <div className="flex flex-col gap-6 rounded-xl border border-zinc-800 bg-zinc-900 p-5">
         <p className="text-sm font-medium text-zinc-300">
           Draft context <span className="text-zinc-500">(optional)</span>
         </p>
-        <TeamSlotPicker
+        <LaneDraftBoard
           label="Your team"
           champions={champions}
-          selectedIds={allyIds}
-          onChange={setAllyIds}
-          maxSlots={4}
-          disabledIds={takenIds.filter((id) => !allyIds.includes(id))}
+          lanes={allyLanes}
+          onChange={setAllyLanes}
+          disabledIds={takenIds}
         />
-        <TeamSlotPicker
+        <LaneDraftBoard
           label="Enemy team (other picks)"
           champions={champions}
-          selectedIds={enemyIds}
-          onChange={setEnemyIds}
-          maxSlots={4}
-          disabledIds={takenIds.filter((id) => !enemyIds.includes(id))}
+          lanes={enemyLanes}
+          onChange={setEnemyLanes}
+          disabledIds={takenIds}
         />
         <TeamSlotPicker
           label="Your bans"
