@@ -44,3 +44,6 @@ next-env.d.ts
 /.pandaos
 /.claude
 /.agents
+
+.vercel
+.env*
