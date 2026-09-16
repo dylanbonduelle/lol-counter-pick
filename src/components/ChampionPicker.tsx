@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Image from "next/image";
 import type { ChampionSummary } from "@/lib/dataDragon";
 import { getCounters } from "@/data/counters";
+import TeamSlotPicker from "./TeamSlotPicker";
 
 export default function ChampionPicker({
   champions,
@@ -12,6 +13,8 @@ export default function ChampionPicker({
 }) {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [allyIds, setAllyIds] = useState<string[]>([]);
+  const [enemyIds, setEnemyIds] = useState<string[]>([]);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return champions.slice(0, 12);
@@ -20,18 +23,23 @@ export default function ChampionPicker({
   }, [champions, query]);
 
   const selected = champions.find((c) => c.id === selectedId) ?? null;
+  const takenIds = useMemo(
+    () => [selectedId, ...allyIds, ...enemyIds].filter((id): id is string => Boolean(id)),
+    [selectedId, allyIds, enemyIds]
+  );
+
   const counters = selected ? getCounters(selected.id) : [];
   const counterChampions = counters
     .map((entry) => ({
       entry,
       champion: champions.find((c) => c.id === entry.championId),
     }))
-    .filter((c) => c.champion);
+    .filter((c) => c.champion && !takenIds.includes(c.champion.id));
 
   return (
-    <div className="flex w-full max-w-2xl flex-col gap-6">
+    <div className="flex w-full max-w-2xl flex-col gap-8">
       <div className="flex flex-col gap-2">
-        <label htmlFor="champion-search" className="text-sm font-medium text-zinc-400">
+        <label htmlFor="champion-search" className="text-sm font-semibold text-zinc-900">
           Opponent&apos;s champion
         </label>
         <input
@@ -43,7 +51,7 @@ export default function ChampionPicker({
             setSelectedId(null);
           }}
           placeholder="Search for a champion..."
-          className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-2 text-zinc-100 placeholder-zinc-500 outline-none focus:border-blue-500"
+          className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-2 text-zinc-100 placeholder-zinc-500 outline-none focus:border-green-500"
         />
       </div>
 
@@ -73,7 +81,7 @@ export default function ChampionPicker({
       )}
 
       {selected && (
-        <div className="flex flex-col gap-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+        <div className="flex flex-col gap-4 rounded-xl border border-zinc-800 bg-zinc-900 p-5">
           <div className="flex items-center gap-3">
             <Image
               src={selected.image}
@@ -102,16 +110,16 @@ export default function ChampionPicker({
             <p className="text-sm font-medium text-zinc-400">Recommended counters</p>
             {counterChampions.length === 0 ? (
               <p className="text-sm text-zinc-500">
-                No curated counter data for {selected.name} yet. This is a hand-curated
-                starter set — Riot&apos;s API doesn&apos;t publish matchup data, so
-                coverage is still growing.
+                {counters.length === 0
+                  ? `No curated counter data for ${selected.name} yet.`
+                  : "All curated counters for this champion are already picked."}
               </p>
             ) : (
               <ul className="flex flex-col gap-3">
                 {counterChampions.map(({ entry, champion }) => (
                   <li
                     key={entry.championId}
-                    className="flex items-center gap-3 rounded-lg bg-zinc-800/60 p-3"
+                    className="flex items-start gap-3 rounded-lg bg-zinc-800/60 p-3"
                   >
                     <Image
                       src={champion!.image}
@@ -121,9 +129,12 @@ export default function ChampionPicker({
                       className="rounded-md"
                       unoptimized
                     />
-                    <div>
+                    <div className="flex flex-col gap-1">
                       <p className="font-medium text-zinc-100">{champion!.name}</p>
                       <p className="text-sm text-zinc-400">{entry.reason}</p>
+                      <p className="text-xs font-medium text-green-400">
+                        Key ability: {entry.keyAbility}
+                      </p>
                     </div>
                   </li>
                 ))}
@@ -132,6 +143,28 @@ export default function ChampionPicker({
           </div>
         </div>
       )}
+
+      <div className="flex flex-col gap-5 rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+        <p className="text-sm font-medium text-zinc-300">
+          Draft context <span className="text-zinc-500">(optional)</span>
+        </p>
+        <TeamSlotPicker
+          label="Your team"
+          champions={champions}
+          selectedIds={allyIds}
+          onChange={setAllyIds}
+          maxSlots={4}
+          disabledIds={[selectedId, ...enemyIds].filter((id): id is string => Boolean(id))}
+        />
+        <TeamSlotPicker
+          label="Enemy team (other picks)"
+          champions={champions}
+          selectedIds={enemyIds}
+          onChange={setEnemyIds}
+          maxSlots={4}
+          disabledIds={[selectedId, ...allyIds].filter((id): id is string => Boolean(id))}
+        />
+      </div>
     </div>
   );
 }
