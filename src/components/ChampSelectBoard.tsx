@@ -92,6 +92,41 @@ function ChampionChip({
   );
 }
 
+function PoolEditor({
+  champions,
+  poolIds,
+  onChange,
+}: {
+  champions: ChampionSummary[];
+  poolIds: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const byId = useMemo(() => new Map(champions.map((c) => [c.id, c])), [champions]);
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 pl-16">
+      <span className="text-[10px] text-zinc-500">My pool:</span>
+      {poolIds.map((id) => {
+        const c = byId.get(id);
+        if (!c) return null;
+        return (
+          <button key={id} onClick={() => onChange(poolIds.filter((x) => x !== id))} title={`Remove ${c.name}`}>
+            <Image src={c.image} alt={c.name} width={20} height={20} className="rounded" unoptimized />
+          </button>
+        );
+      })}
+      <div className="w-28">
+        <ChampionSearch
+          placeholder="Add..."
+          champions={champions}
+          onAssign={(id) => onChange([...poolIds, id])}
+          disabledIds={poolIds}
+        />
+      </div>
+    </div>
+  );
+}
+
 function BanRow({
   label,
   champions,
@@ -152,6 +187,7 @@ export default function ChampSelectBoard({ champions }: { champions: ChampionSum
   const [enemyLanes, setEnemyLanes] = useState<LaneAssignment>({});
   const [yourBans, setYourBans] = useState<string[]>([]);
   const [enemyBans, setEnemyBans] = useState<string[]>([]);
+  const [pool, setPool] = useState<Partial<Record<Role, string[]>>>({});
 
   const byId = useMemo(() => new Map(champions.map((c) => [c.id, c])), [champions]);
 
@@ -169,8 +205,8 @@ export default function ChampSelectBoard({ champions }: { champions: ChampionSum
     [allyIds, enemyIds, yourBans, enemyBans]
   );
 
-  function suggestionsFor(lane: Role): Candidate[] {
-    if (enemyIds.length === 0) return [];
+  function suggestionsFor(lane: Role): { candidates: Candidate[]; usedFallback: boolean } {
+    if (enemyIds.length === 0) return { candidates: [], usedFallback: false };
     const primaryEnemyId = enemyLanes[lane];
     const map = new Map<string, Candidate>();
 
@@ -197,15 +233,27 @@ export default function ChampSelectBoard({ champions }: { champions: ChampionSum
       });
     });
 
-    return [...map.values()]
-      .filter((c) => byId.has(c.championId))
-      .sort((a, b) => {
-        const aMatch = getRole(a.championId) === lane ? 1 : 0;
-        const bMatch = getRole(b.championId) === lane ? 1 : 0;
-        if (aMatch !== bMatch) return bMatch - aMatch;
-        return b.score - a.score;
-      })
-      .slice(0, 3);
+    const all = [...map.values()].filter((c) => byId.has(c.championId));
+    const poolIds = pool[lane] ?? [];
+
+    let candidates: Candidate[] = [];
+    if (poolIds.length > 0) {
+      candidates = all
+        .filter((c) => poolIds.includes(c.championId))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3);
+    }
+
+    let usedFallback = false;
+    if (candidates.length === 0) {
+      candidates = all
+        .filter((c) => getRole(c.championId) === lane)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3);
+      usedFallback = poolIds.length > 0;
+    }
+
+    return { candidates, usedFallback };
   }
 
   return (
@@ -236,7 +284,9 @@ export default function ChampSelectBoard({ champions }: { champions: ChampionSum
           const allyChampion = allyChampionId ? byId.get(allyChampionId) : undefined;
           const enemyChampionId = enemyLanes[lane];
           const enemyChampion = enemyChampionId ? byId.get(enemyChampionId) : undefined;
-          const suggestions = !allyChampion ? suggestionsFor(lane) : [];
+          const { candidates: suggestions, usedFallback } = !allyChampion
+            ? suggestionsFor(lane)
+            : { candidates: [], usedFallback: false };
 
           return (
             <div key={`${lane}-ally`} className="contents">
@@ -264,6 +314,12 @@ export default function ChampSelectBoard({ champions }: { champions: ChampionSum
                   )}
                 </div>
 
+                <PoolEditor
+                  champions={champions}
+                  poolIds={pool[lane] ?? []}
+                  onChange={(ids) => setPool({ ...pool, [lane]: ids })}
+                />
+
                 {!allyChampion && (
                   <div className="flex flex-col gap-1.5 pl-16">
                     {suggestions.length === 0 ? (
@@ -273,7 +329,13 @@ export default function ChampSelectBoard({ champions }: { champions: ChampionSum
                           : "No curated counter data yet for this matchup."}
                       </p>
                     ) : (
-                      suggestions.map((s) => {
+                      <>
+                        {usedFallback && (
+                          <p className="text-[10px] text-zinc-500">
+                            No pool champion fits — showing general suggestions:
+                          </p>
+                        )}
+                        {suggestions.map((s) => {
                         const champion = byId.get(s.championId)!;
                         const bestReason =
                           s.reasons.find((r) => r.enemyId === enemyChampionId) ?? s.reasons[0];
@@ -314,7 +376,8 @@ export default function ChampSelectBoard({ champions }: { champions: ChampionSum
                             </div>
                           </div>
                         );
-                      })
+                        })}
+                      </>
                     )}
                   </div>
                 )}
